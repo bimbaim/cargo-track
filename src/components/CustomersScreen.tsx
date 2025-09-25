@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useState, useMemo } from 'react'; // Import useMemo
+import { Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import FilterBar from './FilterBar';
 import type { FilterState } from './FilterBar';
@@ -23,6 +23,59 @@ interface Customer {
   notes: string;
 }
 
+// Definisikan komponen Pagination
+interface PaginationProps {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}
+
+const SimplePagination: React.FC<PaginationProps> = ({ currentPage, totalPages, onPageChange }) => {
+  if (totalPages <= 1) return null;
+
+  const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
+
+  return (
+    <div className="flex justify-center items-center space-x-2 p-4 bg-white rounded-lg shadow-sm border border-purple-100">
+      {/* Tombol Sebelumnya */}
+      <button
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        className="p-2 border rounded-full text-purple-600 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        aria-label="Halaman sebelumnya"
+      >
+        <ChevronLeft className="w-5 h-5" />
+      </button>
+
+      {/* Tampilan Nomor Halaman */}
+      {pageNumbers.map(number => (
+        <button
+          key={number}
+          onClick={() => onPageChange(number)}
+          className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+            number === currentPage
+              ? 'bg-purple-600 text-white shadow-md'
+              : 'text-purple-600 hover:bg-purple-100'
+          }`}
+        >
+          {number}
+        </button>
+      ))}
+
+      {/* Tombol Selanjutnya */}
+      <button
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+        className="p-2 border rounded-full text-purple-600 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        aria-label="Halaman selanjutnya"
+      >
+        <ChevronRight className="w-5 h-5" />
+      </button>
+    </div>
+  );
+};
+
+
 export default function CustomersScreen() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
@@ -30,6 +83,11 @@ export default function CustomersScreen() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showDetailPopup, setShowDetailPopup] = useState(false);
+  
+  // State untuk Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 4; // Menampilkan 4 card per halaman
+
   const [filters, setFilters] = useState<FilterState>({
     search: '',
     status: '',
@@ -122,11 +180,63 @@ export default function CustomersScreen() {
       lastOrder: '15 Jan 2024',
       joinDate: '28 Apr 2023',
       notes: 'Fokus pada produk kosmetik'
+    },
+    {
+      id: 7,
+      name: 'Joko Susilo',
+      company: 'PT Karya Sentosa',
+      email: 'joko@karyasentosa.com',
+      phone: '+62 818-7777-8888',
+      address: 'Jl. Merdeka No. 1, Semarang',
+      status: 'active',
+      type: 'enterprise',
+      totalOrders: 90,
+      lastOrder: '10 Jan 2024',
+      joinDate: '01 Jan 2023',
+      notes: 'Kontrak tahunan'
     }
   ]);
 
+  // Fungsi untuk mengubah halaman
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+  
+  // Filter Items (Dibuat dalam useMemo agar efisien)
+  const filteredCustomers = useMemo(() => {
+    const filtered = customers.filter(customer => {
+      // Search filter
+      if (filters.search) {
+        const searchLower = filters.search.toLowerCase();
+        if (
+          !customer.name.toLowerCase().includes(searchLower) &&
+          !customer.company.toLowerCase().includes(searchLower) &&
+          !customer.email.toLowerCase().includes(searchLower)
+        ) {
+          return false;
+        }
+      }
+
+      // Status filter
+      if (filters.status && filters.status !== 'none' && customer.status !== filters.status) {
+        return false;
+      }
+
+      // Type filter
+      if (filters.type && filters.type !== 'none' && customer.type !== filters.type) {
+        return false;
+      }
+
+      return true;
+    });
+
+    return filtered;
+  }, [customers, filters]);
+
+
   const handleAddCustomer = (newCustomer: Customer) => {
     setCustomers([...customers, { ...newCustomer, id: Date.now() }]);
+    setCurrentPage(1); // Kembali ke halaman 1 saat item baru ditambahkan
   };
 
   const handleEditCustomer = (updatedCustomer: Customer) => {
@@ -134,13 +244,59 @@ export default function CustomersScreen() {
     setEditCustomer(null);
   };
 
+  const handleFilterChange = (newFilters: Partial<FilterState>) => {
+    // Memastikan status dan type diatur ke 'none' jika kosong, untuk konsistensi FilterState
+    setFilters(prev => ({
+      ...prev,
+      ...newFilters,
+      status: newFilters.status || 'none',
+      type: newFilters.type || 'none'
+    }));
+    setCurrentPage(1); // Reset halaman saat filter berubah
+  };
+
+  // LOGIC PAGINATION UTAMA
+  const totalItems = filteredCustomers.length;
+  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+
+  // LOGIC PENYESUAIAN HALAMAN SETELAH FILTER
+  if (currentPage > totalPages && totalPages > 0) {
+    setCurrentPage(totalPages);
+  } else if (totalPages === 0 && currentPage !== 1) {
+    setCurrentPage(1);
+  }
+
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+
+  // Item yang ditampilkan di halaman saat ini
+  const currentCustomers = filteredCustomers.slice(startIndex, endIndex);
+
+  // LOGIC PENGHAPUSAN dengan penyesuaian halaman
   const handleDeleteCustomer = () => {
     if (deleteCustomer) {
-      setCustomers(customers.filter(c => c.id !== deleteCustomer.id));
+      const newCustomers = customers.filter(c => c.id !== deleteCustomer.id);
+      setCustomers(newCustomers);
       setDeleteCustomer(null);
       setShowDeleteConfirm(false);
+      
+      // Hitung ulang halaman setelah penghapusan
+      const newTotalItems = newCustomers.filter(c => {
+        // Logika filter singkat untuk item yang tersisa
+        if (filters.search && !c.name.toLowerCase().includes(filters.search.toLowerCase())) return false;
+        if (filters.status && filters.status !== 'none' && c.status !== filters.status) return false;
+        if (filters.type && filters.type !== 'none' && c.type !== filters.type) return false;
+        return true;
+      }).length;
+      
+      const newTotalPages = Math.ceil(newTotalItems / ITEMS_PER_PAGE);
+      if (currentPage > newTotalPages && newTotalPages > 0) {
+          setCurrentPage(newTotalPages);
+      }
+      // Jika newTotalPages adalah 0, currentPage akan tetap 1 (atau sudah di handle di atas)
     }
   };
+
 
   const handleEdit = (customer: Customer) => {
     setEditCustomer(customer);
@@ -178,39 +334,6 @@ export default function CustomersScreen() {
     }
   };
 
-  const handleFilterChange = (newFilters: Partial<FilterState>) => {
-    setFilters(prev => ({
-      ...prev,
-      ...newFilters
-    }));
-  };
-
-  const filteredCustomers = customers.filter(customer => {
-    // Search filter
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      if (
-        !customer.name.toLowerCase().includes(searchLower) &&
-        !customer.company.toLowerCase().includes(searchLower) &&
-        !customer.email.toLowerCase().includes(searchLower)
-      ) {
-        return false;
-      }
-    }
-
-    // Status filter
-    if (filters.status && customer.status !== filters.status) {
-      return false;
-    }
-
-    // Type filter
-    if (filters.type && customer.type !== filters.type) {
-      return false;
-    }
-
-    return true;
-  });
-
   const statusOptions = [
     { value: 'active', label: 'Aktif' },
     { value: 'inactive', label: 'Tidak Aktif' },
@@ -225,53 +348,74 @@ export default function CustomersScreen() {
   ];
 
   return (
-    <div className="p-6 space-y-6 bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 min-h-screen">
-      {/* Header */}
-      <div className="bg-white rounded-lg p-6 shadow-sm border border-purple-200">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-              Data Pelanggan
-            </h1>
-            <p className="text-purple-600 mt-1">
-              <span className="font-semibold text-purple-800">{filteredCustomers.length}</span> dari {customers.length} pelanggan ditampilkan
-            </p>
+    // Gunakan h-screen dan flex-col untuk layout penuh tanpa scroll utama
+    <div className="flex flex-col h-screen p-6 bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
+      
+      {/* Header (fixed content) */}
+      <div className="space-y-6 flex-shrink-0 mb-6">
+        <div className="bg-white rounded-lg p-6 shadow-sm border border-purple-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                Data Pelanggan
+              </h1>
+              <p className="text-purple-600 mt-1">
+                <span className="font-semibold text-purple-800">{totalItems}</span> dari {customers.length} pelanggan ditemukan. Menampilkan {currentCustomers.length} item di halaman {currentPage}.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Filter Bar */}
-      <FilterBar
-        onFilterChange={handleFilterChange}
-        filterOptions={{
-          statuses: statusOptions,
-          types: typeOptions,
-          showDateFilter: true,
-          showSearchFilter: true
-        }}
-        searchPlaceholder="Cari nama, perusahaan, atau email..."
-      />
+        {/* Filter Bar (fixed content) */}
+        <FilterBar
+          onFilterChange={handleFilterChange}
+          filterOptions={{
+            statuses: statusOptions,
+            types: typeOptions,
+            showDateFilter: true,
+            showSearchFilter: true
+          }}
+          searchPlaceholder="Cari nama, perusahaan, atau email..."
+        />
+      </div> {/* Akhir Header/Filter Wrapper */}
 
-      {/* Customer List */}
-      <div className="space-y-3">
-        {filteredCustomers.map(customer => (
-          <CustomerCard
+      {/* Customer List (Scrollable Area) */}
+      {/* Menggunakan flex-1 dan overflow-y-auto untuk memungkinkan scroll hanya pada daftar item jika tinggi konten melebihi sisa ruang layar */}
+      <div className="flex-1 overflow-y-auto space-y-3 pb-4">
+        {/* Render item yang sudah di-slice */}
+        {currentCustomers.map(customer => (
+          <motion.div
             key={customer.id}
-            {...customer}
-            onClick={() => handleCustomerClick(customer)}
-            onEdit={() => handleEdit(customer)}
-            onDelete={() => handleDelete(customer)}
-          />
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <CustomerCard
+              {...customer}
+              onClick={() => handleCustomerClick(customer)}
+              onEdit={() => handleEdit(customer)}
+              onDelete={() => handleDelete(customer)}
+            />
+          </motion.div>
         ))}
-      </div>
 
-      {/* Empty State */}
-      {filteredCustomers.length === 0 && (
-        <div className="text-center py-12 bg-white rounded-lg border border-purple-200">
-          <p className="text-purple-600">Tidak ada pelanggan yang ditemukan</p>
-          <p className="text-sm text-purple-400 mt-1">Coba ubah kata kunci pencarian atau filter</p>
-        </div>
-      )}
+        {/* Empty State */}
+        {totalItems === 0 && (
+          <div className="text-center py-12 bg-white rounded-lg border border-purple-200">
+            <p className="text-purple-600">Tidak ada pelanggan yang ditemukan</p>
+            <p className="text-sm text-purple-400 mt-1">Coba ubah kata kunci pencarian atau filter</p>
+          </div>
+        )}
+      </div> {/* Akhir Customer List */}
+      
+      {/* Pagination (fixed content di bawah) */}
+      <div className="flex-shrink-0 mt-4">
+        <SimplePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={handlePageChange}
+        />
+      </div>
 
       {/* Floating Action Button */}
       <motion.button
